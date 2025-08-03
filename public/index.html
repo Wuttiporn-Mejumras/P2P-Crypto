@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="th">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>P2P Login</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<body class="bg-slate-50 text-slate-900">
+  <div class="min-h-screen grid place-items-center p-6">
+    <div class="w-full max-w-sm text-center space-y-6">
+      <h1 class="text-2xl font-bold">P2P Auth</h1>
+
+      <div class="grid gap-3">
+        <button id="btnCreate"
+          class="w-full px-4 py-3 rounded-xl bg-slate-900 text-white hover:opacity-95 transition">
+          Create Wallet
+        </button>
+        <button id="btnLogin"
+          class="w-full px-4 py-3 rounded-xl bg-indigo-600 text-white hover:opacity-95 transition">
+          Login
+        </button>
+      </div>
+
+      <p class="text-[12px] text-slate-500">* เก็บกุญแจส่วนตัวให้ปลอดภัย</p>
+    </div>
+  </div>
+
+  <!-- Modal Login -->
+  <dialog id="dlg" class="rounded-2xl p-0 w-[92%] max-w-md">
+    <form class="bg-white rounded-2xl p-5 space-y-3" onsubmit="event.preventDefault()">
+      <h3 class="font-semibold text-lg text-center">Login</h3>
+      <div>
+        <label class="block text-sm font-semibold mb-1">Address</label>
+        <input id="addr" placeholder="0x..." class="w-full border rounded-xl px-3 py-2" />
+      </div>
+      <div>
+        <label class="block text-sm font-semibold mb-1">Private Key</label>
+        <textarea id="keyInput" class="w-full border rounded-xl px-3 py-2 font-mono min-h-[110px]"
+          placeholder="วางคีย์ได้ทั้งแบบ PEM / Base64 (PKCS#8) / hex"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-2 pt-2">
+        <button type="button" class="px-4 py-2 rounded-xl border" onclick="document.getElementById('dlg').close()">ยกเลิก</button>
+        <button id="dlgSubmit" type="button" class="px-4 py-2 rounded-xl bg-indigo-600 text-white">เข้าสู่ระบบ</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 hidden">
+    <div id="toastBox" class="px-3 py-2 rounded-lg shadow bg-slate-900 text-white text-sm"></div>
+  </div>
+
+<script>
+const apiBase = "/api"; // เปลี่ยนได้ถ้าแบ็กเอนด์อยู่ path อื่น
+
+const $ = id => document.getElementById(id);
+const toast = (m, ok=true) => {
+  const b=$('toastBox'), t=$('toast');
+  b.textContent=m; b.className='px-3 py-2 rounded-lg shadow text-sm ' + (ok?'bg-emerald-600':'bg-rose-600');
+  t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),1600);
+};
+
+// ---------- Key parsing ----------
+function keyInputToArrayBuffer(input){
+  let s = (input||"").trim();
+  if (s.includes('-----BEGIN') && s.includes('-----END')) {
+    s = s.replace(/-----BEGIN [^-]+-----/,'').replace(/-----END [^-]+-----/,'').replace(/\s+/g,'');
+  }
+  const hexRe = /^[0-9a-fA-F]+$/;
+  if (hexRe.test(s) && s.length % 2 === 0) {
+    const buf = new Uint8Array(s.length/2);
+    for (let i=0;i<s.length;i+=2) buf[i/2] = parseInt(s.substr(i,2),16);
+    return buf.buffer;
+  }
+  const bin = atob(s);
+  const buf = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+  return buf.buffer;
+}
+async function signEd25519(message, keyInput){
+  const keyData = keyInputToArrayBuffer(keyInput);
+  const pk = await crypto.subtle.importKey('pkcs8', keyData, {name:'Ed25519'}, false, ['sign']);
+  const sig = await crypto.subtle.sign('Ed25519', pk, new TextEncoder().encode(message));
+  const b = new Uint8Array(sig); let s=''; for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]);
+  return btoa(s);
+}
+
+// ---------- Create Wallet -> auto login -> go home ----------
+$('btnCreate').onclick = async () => {
+  try{
+    const w = await (await fetch(`${apiBase}/wallet/create`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ label:'user-'+Date.now() })
+    })).json();
+    if(!w?.address || !w?.privateKey) { toast('สร้างกระเป๋าไม่สำเร็จ', false); return; }
+
+    // ตัดหัวท้าย PEM เพื่อได้ Base64 ล้วน
+    let base64Key = w.privateKey.trim();
+    if (base64Key.includes('-----BEGIN')) {
+      base64Key = base64Key.replace(/-----BEGIN [^-]+-----/,'').replace(/-----END [^-]+-----/,'').replace(/\s+/g,'');
+    }
+
+    // login อัตโนมัติ
+    const n = await (await fetch(`${apiBase}/auth/nonce?address=${encodeURIComponent(w.address)}`)).json();
+    const signature = await signEd25519(n.nonce, base64Key);
+    const login = await (await fetch(`${apiBase}/auth/login`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ address: w.address, nonce: n.nonce, signature })
+    })).json();
+    if (login?.error) return toast('เข้าสู่ระบบไม่สำเร็จ', false);
+
+    // ส่งข้อมูลไปหน้า home ผ่าน sessionStorage (ไม่ติด URL)
+    sessionStorage.setItem('p2p.address', w.address);
+    sessionStorage.setItem('p2p.key', base64Key);       // มีค่าเมื่อมาจาก Create
+    sessionStorage.setItem('p2p.keyAck', 'false');      // ยังไม่ยืนยันว่าบันทึก
+    sessionStorage.setItem('p2p.source', 'create');
+    location.href = '/home.html';
+  }catch(e){ toast('เกิดข้อผิดพลาด', false); }
+};
+
+// ---------- Login -> go home (ไม่โชว์ token) ----------
+$('btnLogin').onclick = () => $('dlg').showModal();
+$('dlgSubmit').onclick = async () => {
+  const address = $('addr').value.trim();
+  const keyInput = $('keyInput').value.trim();
+  if(!address || !keyInput) { toast('กรอกข้อมูลให้ครบ', false); return; }
+  try{
+    const n = await (await fetch(`${apiBase}/auth/nonce?address=${encodeURIComponent(address)}`)).json();
+    const signature = await signEd25519(n.nonce, keyInput);
+    const login = await (await fetch(`${apiBase}/auth/login`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ address, nonce: n.nonce, signature })
+    })).json();
+    if (login?.error) return toast('เข้าสู่ระบบไม่สำเร็จ', false);
+
+    sessionStorage.setItem('p2p.address', address);
+    sessionStorage.removeItem('p2p.key');               // ไม่ส่งคีย์ต่อ
+    sessionStorage.setItem('p2p.source', 'login');
+    location.href = '/home.html';
+  }catch(e){ toast('เกิดข้อผิดพลาด', false); }
+};
+</script>
+</body>
+</html>

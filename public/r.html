@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Buy Modal Test</title>
+  <script>
+    const $ = id => document.getElementById(id);
+    let buyCtx = null;
+
+    function openBuyModal(order, remain) {
+      buyCtx = { order, remain, submitting: false };
+      $('bPrice').textContent = order.price;
+      $('bRemain').textContent = remain;
+      $('bAmount').value = '';
+      $('buyModal').style.display = 'block';
+
+      loadMyQuoteBalance(order.quoteAsset);
+
+      // ✅ Set onclick AFTER modal is shown
+      $('bMax').onclick = () => {
+        const quoteAvail = buyCtx?.quoteAvail || 0;
+        const price = parseFloat(order.price);
+        const max = price > 0 ? Math.min(quoteAvail / price, remain) : 0;
+        $('bAmount').value = max > 0 ? String(max.toFixed(6)) : '';
+        console.log('MAX clicked:', { quoteAvail, price, remain, max });
+      };
+    }
+
+    function loadMyQuoteBalance(assetCode) {
+      // จำลองดึง balance
+      setTimeout(() => {
+        const avail = 1000; // จำลอง balance
+        $('bAvail').textContent = avail;
+        buyCtx.quoteAvail = avail;
+      }, 100);
+    }
+
+    function closeBuyModal() {
+      $('buyModal').style.display = 'none';
+      buyCtx = null;
+    }
+
+    window.onload = () => {
+      $('openModalBtn').onclick = () =>
+        openBuyModal({ orderId: '123', price: '2222', quoteAsset: 'USDT' }, 1);
+
+      $('bCancel').onclick = () => closeBuyModal();
+    };
+  </script>
+  <style>
+    #buyModal {
+      display: none;
+      position: fixed;
+      top: 20%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #fff;
+      padding: 20px;
+      border: 1px solid #ccc;
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+  <button id="openModalBtn">เปิด Modal</button>
+
+  <div id="buyModal">
+    <p>ราคา: <span id="bPrice"></span></p>
+    <p>คงเหลือ: <span id="bRemain"></span></p>
+    <p>Available: <span id="bAvail">-</span></p>
+    <div style="display: flex; gap: 8px; margin-top: 10px;">
+      <input id="bAmount" type="number" placeholder="จำนวน" />
+      <button id="bMax">MAX</button>
+    </div>
+    <div style="margin-top: 10px;">
+      <button id="bCancel">ยกเลิก</button>
+    </div>
+  </div>
+</body>
+</html>

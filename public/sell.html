@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ตั้งขาย (Sell)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <!-- Header -->
+  <header class="fixed top-0 left-0 right-0 h-14 bg-white/80 backdrop-blur border-b">
+    <div class="max-w-5xl mx-auto h-full flex items-center justify-between px-4">
+      <a href="/home.html" class="text-sm text-slate-600 hover:text-slate-900">← กลับหน้าหลัก</a>
+      <div class="text-right">
+        <button id="logout" class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:opacity-95">
+          ออกจากระบบ
+        </button>
+        <div class="mt-1 text-[12px] text-slate-600">
+          <span class="mr-1 text-slate-400">Address:</span>
+          <code id="addr" class="bg-slate-100 rounded px-2 py-0.5 break-all">—</code>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="pt-20 pb-16">
+    <div class="max-w-5xl mx-auto px-4 space-y-6">
+
+      <!-- Create Sell Order -->
+      <section class="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+        <h1 class="text-xl font-semibold">สร้างออเดอร์ขาย (SELL)</h1>
+
+        <form id="createForm" class="grid md:grid-cols-2 gap-4">
+          <!-- Base / Quote -->
+          <div>
+            <label class="block text-sm font-medium mb-1">Base Asset (สิ่งที่ขาย)</label>
+            <select id="baseAsset" class="w-full border rounded-xl px-3 py-2"></select>
+            <p id="baseHint" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Quote Asset (สกุลที่รับ)</label>
+            <select id="quoteAsset" class="w-full border rounded-xl px-3 py-2"></select>
+            <p id="quoteHint" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+
+          <!-- Amount / Price -->
+          <div>
+            <label class="block text-sm font-medium mb-1">จำนวนที่ขาย (Amount – Base)</label>
+            <input id="amountBase" type="number" min="0" step="any"
+                   class="w-full border rounded-xl px-3 py-2" placeholder="เช่น 1.2345" />
+            <p id="amtHint" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">ราคา (Price – ต่อ 1 Base ในหน่วย Quote)</label>
+            <input id="price" type="number" min="0" step="any"
+                   class="w-full border rounded-xl px-3 py-2" placeholder="เช่น 25000" />
+            <p id="priceHint" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+
+          <div class="md:col-span-2">
+            <button id="btnCreate" type="submit"
+                    class="w-full px-4 py-3 rounded-xl bg-indigo-600 text-white hover:opacity-95 transition">
+              Create ตั้งขาย
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Sell Orders List -->
+      <section class="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+        <div class="flex flex-wrap items-end gap-3">
+          <div>
+            <label class="block text-sm font-medium mb-1">Base</label>
+            <select id="fltBase" class="border rounded-xl px-3 py-2"></select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Quote</label>
+            <select id="fltQuote" class="border rounded-xl px-3 py-2"></select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Min Price</label>
+            <input id="fltMin" type="number" step="any" class="border rounded-xl px-3 py-2 w-36" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Max Price</label>
+            <input id="fltMax" type="number" step="any" class="border rounded-xl px-3 py-2 w-36" />
+          </div>
+          <div class="flex items-center gap-2">
+            <input id="onlyMine" type="checkbox" class="h-4 w-4" checked>
+            <label for="onlyMine" class="text-sm select-none">เฉพาะของฉัน</label>
+          </div>
+          <button id="btnReload" class="px-4 py-2 rounded-xl border hover:bg-slate-50">โหลดรายการ</button>
+          <button id="btnAll" class="px-4 py-2 rounded-xl border hover:bg-slate-50">ทั้งหมด (All)</button>
+        </div>
+
+        <div class="overflow-auto">
+          <table class="w-full text-sm">
+            <thead class="text-left text-slate-500">
+              <tr>
+                <th class="py-2 pr-3">เวลา</th>
+                <th class="py-2 pr-3">เจ้าของ</th>
+                <th class="py-2 pr-3">คู่</th>
+                <th class="py-2 pr-3">Amount (Base)</th>
+                <th class="py-2 pr-3">Filled</th>
+                <th class="py-2 pr-3">Price</th>
+                <th class="py-2">สถานะ</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 hidden">
+    <div id="toastBox" class="px-3 py-2 rounded-lg shadow bg-slate-900 text-white text-sm"></div>
+  </div>
+
+<script>
+const apiBase = "/api";
+// *** ตรงกับแบ็กเอนด์ของคุณ ***
+const SELL_CREATE = `${apiBase}/orders/sell`;        
+const SELL_LIST   = `${apiBase}/orders/sell-open`;   
+const CANCEL_ORDER = `${apiBase}/orders`;
+const $ = id => document.getElementById(id);
+const toast = (m, ok=true) => { const b=$('toastBox'), t=$('toast'); b.textContent=m; b.className='px-3 py-2 rounded-lg shadow text-sm ' + (ok?'bg-emerald-600':'bg-rose-600'); t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),1800); };
+
+// ---------- Auth ----------
+const address = sessionStorage.getItem('p2p.address') || '';
+if (!address) location.replace('/');
+$('addr').textContent = address;
+
+// ---------- Assets & precision ----------
+const ASSETS = [
+  { code:'BTC',  precision:8 },
+  { code:'USDT', precision:6 },
+  { code:'THB',  precision:2 },
+  { code:'ETH',  precision:18 },
+  { code:'XRP',  precision:6 },
+  { code:'ADA',  precision:6 },
+  { code:'DOGE', precision:8 },
+  { code:'AVAX', precision:18 },
+];
+
+const baseSel  = $('baseAsset');
+const quoteSel = $('quoteAsset');
+const baseHint = $('baseHint');
+const quoteHint= $('quoteHint');
+const amtHint  = $('amtHint');
+const priceHint= $('priceHint');
+const amountBaseInp = $('amountBase');
+const priceInp      = $('price');
+
+function decimalStep(p){ return (p<=0)?'1':'0.'+'0'.repeat(p-1)+'1'; }
+function fillAssetSelect(sel, includeAll=false){
+  sel.innerHTML='';
+  if (includeAll){
+    const any=document.createElement('option'); any.value=''; any.textContent='ทั้งหมด'; sel.appendChild(any);
+  }
+  ASSETS.forEach(a=>{ const o=document.createElement('option'); o.value=a.code; o.textContent=a.code; sel.appendChild(o); });
+}
+fillAssetSelect(baseSel); fillAssetSelect(quoteSel);
+
+// default pair
+baseSel.value='BTC'; quoteSel.value='USDT'; setupForPair();
+
+function setupForPair(){
+  const b = ASSETS.find(x=>x.code===baseSel.value)  || ASSETS[0];
+  const q = ASSETS.find(x=>x.code===quoteSel.value) || ASSETS[1] || ASSETS[0];
+  amountBaseInp.step = decimalStep(b.precision);
+  priceInp.step      = decimalStep(q.precision);
+  baseHint.textContent  = `Amount (Base) ทศนิยมสูงสุด ${b.precision}`;
+  quoteHint.textContent = `ราคาในหน่วย ${q.code} ทศนิยมสูงสุด ${q.precision}`;
+  amtHint.textContent   = `จำนวนทศนิยมไม่เกิน ${b.precision}`;
+  priceHint.textContent = `จำนวนทศนิยมไม่เกิน ${q.precision}`;
+}
+baseSel.addEventListener('change', setupForPair);
+quoteSel.addEventListener('change', setupForPair);
+function decLen(v){ const s=String(v); const i=s.indexOf('.'); return i<0?0:(s.length-i-1); }
+
+// ---------- Create SELL ----------
+$('createForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const ownerAddress = address;
+  const baseAsset  = baseSel.value;
+  const quoteAsset = quoteSel.value;
+  const amountBase = amountBaseInp.value.trim();
+  const price      = priceInp.value.trim();
+
+  if (!amountBase || Number(amountBase) <= 0) return toast('กรอก Amount ให้ถูกต้อง', false);
+  if (!price || Number(price) <= 0)           return toast('กรอกราคาให้ถูกต้อง', false);
+
+  const b = ASSETS.find(x=>x.code===baseAsset);
+  const q = ASSETS.find(x=>x.code===quoteAsset);
+  if (b && decLen(amountBase) > b.precision) return toast(`Amount ทศนิยมเกิน (${b.precision})`, false);
+  if (q && decLen(price) > q.precision)      return toast(`Price ทศนิยมเกิน (${q.precision})`, false);
+
+  const btn = $('btnCreate');
+  btn.disabled = true; btn.textContent = 'กำลังสร้าง...';
+  try{
+    const res = await fetch(SELL_CREATE, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ownerAddress, baseAsset, quoteAsset, amountBase: Number(amountBase), price: Number(price) })
+    });
+    const j = await res.json();
+    if (res.ok && !j.error) {
+      toast('สร้างออเดอร์ขายสำเร็จ');
+      // รีเฟรชรายการ (ตามตัวกรองปัจจุบัน)
+      loadList();
+      // รีเซ็ตฟิลด์ตัวเลข
+      amountBaseInp.value = '';
+      priceInp.value = '';
+    } else {
+      toast(j.error || 'สร้างออเดอร์ไม่สำเร็จ', false);
+    }
+  } catch {
+    toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้', false);
+  } finally{
+    btn.disabled = false; btn.textContent = 'Create ตั้งขาย';
+  }
+});
+
+// ---------- List (OPEN SELL) ----------
+const fltBase  = $('fltBase');
+const fltQuote = $('fltQuote');
+const fltMin   = $('fltMin');
+const fltMax   = $('fltMax');
+const onlyMine = $('onlyMine');
+const rowsEl   = $('rows');
+
+fillAssetSelect(fltBase, true);  // มี "ทั้งหมด"
+fillAssetSelect(fltQuote, true); // มี "ทั้งหมด"
+fltBase.value='BTC'; fltQuote.value='USDT';
+
+async function loadList(){
+  const params = new URLSearchParams();
+  if (fltBase.value)  params.set('base',  fltBase.value);
+  if (fltQuote.value) params.set('quote', fltQuote.value);
+  if (fltMin.value)   params.set('minPrice', fltMin.value);
+  if (fltMax.value)   params.set('maxPrice', fltMax.value);
+  if (onlyMine.checked) params.set('owner', address);
+  params.set('limit', '50'); 
+  params.set('offset','0');
+
+  try {
+    const res = await fetch(`${SELL_LIST}?${params.toString()}`);
+    const j = await res.json();
+    if (!res.ok || j.error) { 
+      toast(j.error || 'โหลดรายการไม่สำเร็จ', false); 
+      return; 
+    }
+
+    const html = (Array.isArray(j) ? j : []).map(o => {
+      const isMineAndOpen = o.ownerAddress === address && o.status === 'OPEN';
+      const cancelBtn = isMineAndOpen
+        ? `<button class="ml-2 text-red-600 hover:underline" onclick="cancelOrder('${o.orderId}')">ยกเลิก</button>`
+        : '';
+      
+      return `
+        <tr class="border-t">
+          <td class="py-2 pr-3">${o.createdAt ? new Date(o.createdAt).toLocaleString() : '-'}</td>
+          <td class="py-2 pr-3"><code class="text-xs">${o.ownerAddress || '-'}</code></td>
+          <td class="py-2 pr-3">${o.baseAsset}/${o.quoteAsset}</td>
+          <td class="py-2 pr-3">${o.amountBase}</td>
+          <td class="py-2 pr-3">${o.amountBaseFilled}</td>
+          <td class="py-2 pr-3">${o.price}</td>
+          <td class="py-2">${o.status}${cancelBtn}</td>
+        </tr>`;
+    }).join('');
+    
+    rowsEl.innerHTML = html || `<tr class="border-t"><td colspan="7" class="py-3 text-slate-500 text-center">ไม่มีข้อมูล</td></tr>`;
+  } catch {
+    toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้', false);
+  }
+}
+
+// ปุ่มควบคุมตาราง
+$('btnReload').onclick = loadList;
+onlyMine.addEventListener('change', loadList);
+fltBase.addEventListener('change', loadList);
+fltQuote.addEventListener('change', loadList);
+
+// ปุ่ม 'ทั้งหมด (All)' : ล้าง owner + ล้างคู่ + ช่วงราคา แล้วโหลดใหม่
+$('btnAll').onclick = () => {
+  onlyMine.checked = false;
+  fltBase.value = '';  // ทุก base
+  fltQuote.value = ''; // ทุก quote
+  fltMin.value = '';
+  fltMax.value = '';
+  loadList();
+};
+
+// โหลดครั้งแรก (owner=ฉัน)
+loadList();
+
+async function cancelOrder(orderId) {
+  if (!confirm(`ต้องการยกเลิกออเดอร์ ${orderId} ใช่หรือไม่?`)) return;
+
+  try {
+    const url = `${CANCEL_ORDER}/${orderId}/cancel`; // <-- สำคัญ
+    const res = await fetch(url, { method: 'POST' });
+    const j = await res.json();
+    if (!res.ok || j.error) return toast(j.error || 'ยกเลิกไม่สำเร็จ', false);
+    toast('ยกเลิกออเดอร์สำเร็จ');
+    loadList(); // refresh
+  } catch {
+    toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้', false);
+  }
+}
+
+// ---------- Logout ----------
+$('logout').onclick = () => {
+  sessionStorage.removeItem('p2p.address');
+  sessionStorage.removeItem('p2p.key');
+  sessionStorage.removeItem('p2p.keyAck');
+  sessionStorage.removeItem('p2p.source');
+  location.replace('/index.html');
+};
+</script>
+</body>
+</html>

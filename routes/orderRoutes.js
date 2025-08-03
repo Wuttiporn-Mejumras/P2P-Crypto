@@ -1,0 +1,10 @@
+const router = require('express').Router();
+const ctrl = require('../controllers/ordersController');
+router.post('/sell', ctrl.sell); 
+router.post('/:orderId/buy', ctrl.buyFromOrder);
+router.post('/buy-open', ctrl.buyOpen);  
+router.get('/buy-open',  ctrl.listBuyOpen);       
+router.get('/sell-open', ctrl.listSellOpen);
+router.post('/:orderId/cancel', ctrl.cancelOrder);
+router.post('/:orderId/sell', ctrl.sellFromOrder);
+module.exports = router;

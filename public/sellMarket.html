@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ขายทันที (Sell Now)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <header class="fixed top-0 left-0 right-0 h-14 bg-white/80 backdrop-blur border-b">
+    <div class="max-w-5xl mx-auto h-full flex items-center justify-between px-4">
+      <a href="/home.html" class="text-sm text-slate-600 hover:text-slate-900">← กลับหน้าหลัก</a>
+      <div class="text-right">
+        <button id="logout" class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:opacity-95">ออกจากระบบ</button>
+        <div class="mt-1 text-[12px] text-slate-600">
+          <span class="mr-1 text-slate-400">Address:</span>
+          <code id="addr" class="bg-slate-100 rounded px-2 py-0.5 break-all">—</code>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="pt-20 pb-16">
+    <div class="max-w-5xl mx-auto px-4 space-y-6">
+      <h1 class="text-xl font-semibold">ขายทันทีให้กับออร์เดอร์ BUY ที่เปิดอยู่</h1>
+      <div class="flex flex-wrap items-end gap-3 mb-4">
+  <div>
+    <label class="block text-sm font-medium mb-1">Base</label>
+    <select id="fltBase" class="border rounded-xl px-3 py-2"></select>
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Quote</label>
+    <select id="fltQuote" class="border rounded-xl px-3 py-2"></select>
+  </div>
+  <button id="btnReload" class="px-4 py-2 rounded-xl border hover:bg-slate-50">โหลดรายการ</button>
+  <button id="btnAll" class="px-4 py-2 rounded-xl border hover:bg-slate-50">ทั้งหมด (All)</button>
+</div>
+      <div class="overflow-auto bg-white rounded-2xl shadow-sm p-6">
+        <table class="w-full text-sm">
+          <thead class="text-left text-slate-500">
+            <tr>
+              <th class="py-2 pr-3">เวลา</th>
+              <th class="py-2 pr-3">ผู้ซื้อ</th>
+              <th class="py-2 pr-3">คู่</th>
+              <th class="py-2 pr-3">จำนวน (Base)</th>
+              <th class="py-2 pr-3">คงเหลือ</th>
+              <th class="py-2 pr-3">ราคา</th>
+              <th class="py-2">ขายให้</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 hidden">
+    <div id="toastBox" class="px-3 py-2 rounded-lg shadow bg-slate-900 text-white text-sm"></div>
+  </div>
+
+  <div id="sellModal" class="fixed inset-0 hidden items-center justify-center bg-black/40 z-50">
+  <div class="w-[420px] max-w-[92vw] bg-white rounded-2xl shadow p-5">
+    <h3 class="text-lg font-semibold mb-3">ขายให้คำสั่งซื้อ</h3>
+
+    <div class="text-sm space-y-1 mb-3">
+      <div>คำสั่ง: <code id="mOrderId" class="text-slate-600"></code></div>
+      <div>คู่: <span id="mPair" class="font-medium"></span></div>
+      <div>ราคาต่อ 1 <span id="mBaseCodePx"></span>: <span id="mPrice"></span></div>
+      <div>คงเหลือที่ผู้ซื้อรับได้: <span id="mRemain" class="font-medium"></span></div>
+      <div>กระเป๋าของฉัน (<span id="mBaseCode"></span>) — Available: 
+        <span id="mAvail" class="font-medium"></span>, Locked: <span id="mLocked"></span>
+      </div>
+    </div>
+
+    <label class="block text-sm font-medium mb-1">จำนวนที่จะขาย (<span id="mBaseCode2"></span>)</label>
+    <div class="flex gap-2">
+      <input id="mAmount" type="number" min="0" step="any"
+             class="flex-1 border rounded-xl px-3 py-2" placeholder="กรอกจำนวน" />
+      <button id="mMax" class="px-3 rounded-xl border">MAX</button>
+    </div>
+
+    <div class="flex justify-end gap-2 mt-4">
+      <button id="mCancel" class="px-4 py-2 rounded-xl border">ยกเลิก</button>
+      <button id="mConfirm" class="px-4 py-2 rounded-xl bg-emerald-600 text-white">ยืนยันขาย</button>
+    </div>
+  </div>
+</div>
+<script>
+const apiBase = "/api";
+const LIST_BUY_URL = `${apiBase}/orders/buy-open`;
+const SELL_NOW_URL = (orderId) => `${apiBase}/orders/${orderId}/sell`;
+
+const WALLET_BAL_URL = (addr, asset) =>
+  `${apiBase}/wallet/${addr}/balance${asset ? `?asset=${encodeURIComponent(asset)}` : ''}`;
+let sellCtx = null;
+const orderCache = new Map();
+const $ = id => document.getElementById(id);
+const toast = (m, ok=true) => {
+  const b=$('toastBox'), t=$('toast');
+  b.textContent=m;
+  b.className='px-3 py-2 rounded-lg shadow text-sm ' + (ok?'bg-emerald-600':'bg-rose-600');
+  t.classList.remove('hidden');
+  setTimeout(()=>t.classList.add('hidden'),1800);
+};
+
+const address = sessionStorage.getItem('p2p.address') || '';
+if (!address) location.replace('/');
+$('addr').textContent = address;
+
+// ขายทันที
+async function sellNow(orderId, maxBaseAmount) {
+  const inputAmt = prompt(`คุณต้องการขายเท่าไหร่ (Max ${maxBaseAmount})?`);
+  if (!inputAmt) return;
+
+  const amt = parseFloat(inputAmt);
+  if (!(amt > 0)) return toast("จำนวนไม่ถูกต้อง", false);
+  if (amt > maxBaseAmount) return toast("มากกว่าจำนวนที่ผู้ซื้อรับได้", false);
+
+  try {
+    const res = await fetch(SELL_NOW_URL(orderId), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ sellerAddress: address, amountBase: amt })
+    });
+    const j = await res.json();
+    if (!res.ok || j.error) return toast(j.error || "ขายไม่สำเร็จ", false);
+    toast(`ขายสำเร็จ: ${j.sellSummary.soldBase} ได้ ${j.sellSummary.receivedQuote}`);
+    loadList(); // reload
+  } catch {
+    toast("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้", false);
+  }
+}
+
+async function loadList() {
+  const params = new URLSearchParams();
+  if (fltBase.value)  params.set('base',  fltBase.value);
+  if (fltQuote.value) params.set('quote', fltQuote.value);
+
+  try {
+    const res = await fetch(`${LIST_BUY_URL}?${params.toString()}`);
+    const j = await res.json();
+    if (!res.ok || j.error) return toast(j.error || 'โหลดไม่สำเร็จ', false);
+
+    const html = j.map(o => {
+      const remain = parseFloat(o.amountBase) - parseFloat(o.amountBaseFilled || 0);
+       orderCache.set(o.orderId, o);
+      const showBtn = o.ownerAddress !== address && o.status === 'OPEN' && remain > 0;
+      const btn = showBtn
+  ? `<button data-order-id="${o.orderId}" data-remain="${remain}"
+  class="sellBtn px-2 py-1 rounded bg-emerald-600 text-white text-sm hover:opacity-90">
+  ขายให้
+</button>`
+  : '-';
+
+      return `
+        <tr class="border-t">
+          <td class="py-2 pr-3">${new Date(o.createdAt).toLocaleString()}</td>
+          <td class="py-2 pr-3"><code class="text-xs">${o.ownerAddress}</code></td>
+          <td class="py-2 pr-3">${o.baseAsset}/${o.quoteAsset}</td>
+          <td class="py-2 pr-3">${o.amountBase}</td>
+          <td class="py-2 pr-3">${remain}</td>
+          <td class="py-2 pr-3">${o.price}</td>
+          <td class="py-2">${btn}</td>
+        </tr>`;
+    }).join('');
+
+    $('rows').innerHTML = html || `<tr><td colspan="7" class="py-3 text-center text-slate-500">ไม่มีออร์เดอร์ BUY ที่เปิดอยู่</td></tr>`;
+    document.querySelectorAll('.sellBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const orderId = btn.getAttribute('data-order-id');
+    const remain = parseFloat(btn.getAttribute('data-remain'));
+    openSellFromCache(orderId, remain);
+  });
+});
+  } catch {
+    toast("โหลดรายการไม่สำเร็จ", false);
+  }
+}
+
+const ASSETS = [
+  { code:'BTC' }, { code:'USDT' }, { code:'THB' }, { code:'ETH' },
+  { code:'XRP' }, { code:'ADA' }, { code:'DOGE' }, { code:'AVAX' }
+];
+
+const fltBase  = $('fltBase');
+const fltQuote = $('fltQuote');
+
+function fillAssetSelect(sel, includeAll = false){
+  sel.innerHTML = '';
+  if (includeAll){
+    const any = document.createElement('option');
+    any.value = ''; any.textContent = 'ทั้งหมด';
+    sel.appendChild(any);
+  }
+  ASSETS.forEach(a => {
+    const o = document.createElement('option');
+    o.value = a.code;
+    o.textContent = a.code;
+    sel.appendChild(o);
+  });
+}
+
+fillAssetSelect(fltBase, true);
+fillAssetSelect(fltQuote, true);
+
+loadList();
+
+$('logout').onclick = () => {
+  sessionStorage.removeItem('p2p.address');
+  sessionStorage.removeItem('p2p.key');
+  sessionStorage.removeItem('p2p.keyAck');
+  sessionStorage.removeItem('p2p.source');
+  location.replace('/index.html');
+};
+
+$('btnReload').onclick = loadList;
+
+$('btnAll').onclick = () => {
+  fltBase.value = '';
+  fltQuote.value = '';
+  loadList();
+};
+function openSellFromCache(orderId, remain) {
+  const o = orderCache.get(orderId);
+  if (!o) return toast('ไม่พบคำสั่งซื้อ', false);
+  openSellModal(o, remain);
+}
+function openSellModal(order, remain) {
+  sellCtx = { order, remain, submitting: false };
+  // ใส่ข้อมูลพื้นฐาน
+  $('mOrderId').textContent = order.orderId;
+  $('mPair').textContent = `${order.baseAsset}/${order.quoteAsset}`;
+  $('mBaseCode').textContent = order.baseAsset;
+  $('mBaseCode2').textContent = order.baseAsset;
+  $('mBaseCodePx').textContent = order.baseAsset;
+  $('mPrice').textContent = order.price;
+  $('mRemain').textContent = remain;
+
+  $('mAmount').value = '';
+
+  // แสดง modal
+  $('sellModal').classList.remove('hidden');
+  $('sellModal').classList.add('flex');
+
+  // ดึง balance ของ baseAsset
+  loadMyBalance(order.baseAsset);
+}
+
+function closeSellModal() {
+  $('sellModal').classList.add('hidden');
+  $('sellModal').classList.remove('flex');
+  sellCtx = null;
+}
+
+async function loadMyBalance(assetCode) {
+  try {
+    const res = await fetch(WALLET_BAL_URL(address, assetCode));
+    const j = await res.json();
+    if (!res.ok || j.error) {
+      toast(j.error || 'โหลดยอดคงเหลือไม่สำเร็จ', false);
+      $('mAvail').textContent = '-';
+      $('mLocked').textContent = '-';
+      return;
+    }
+    const bal = (j.balances || [])[0] || {};
+    const avail = parseFloat(bal.balanceAvailable || 0);
+    const locked = parseFloat(bal.balanceLocked || 0);
+    $('mAvail').textContent = String(avail);
+    $('mLocked').textContent = String(locked);
+    // ปุ่ม MAX = min(available, remain)
+    $('mMax').onclick = () => {
+      const max = Math.min(avail, sellCtx?.remain || 0);
+      $('mAmount').value = max > 0 ? String(max) : '';
+    };
+  } catch {
+    toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้', false);
+  }
+}
+
+$('mCancel').onclick = () => closeSellModal();
+
+$('mConfirm').onclick = async () => {
+  if (!sellCtx || sellCtx.submitting) return;
+  const amt = parseFloat($('mAmount').value || '0');
+  if (!(amt > 0)) return toast('กรอกจำนวนให้ถูกต้อง', false);
+  if (amt > sellCtx.remain) return toast('มากกว่าจำนวนที่ผู้ซื้อรับได้', false);
+
+  const btn = $('mConfirm');
+  btn.disabled = true;
+  btn.textContent = 'กำลังขาย...';
+  sellCtx.submitting = true;
+
+  try {
+    const res = await fetch(`${apiBase}/orders/${sellCtx.order.orderId}/sell`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ sellerAddress: address, amountBase: amt })
+    });
+    const j = await res.json();
+    if (!res.ok || j.error) {
+      toast(j.error || 'ขายไม่สำเร็จ', false);
+    } else {
+      toast(`ขายสำเร็จ: ${j.sellSummary.soldBase} ได้ ${j.sellSummary.receivedQuote}`);
+      closeSellModal();
+      loadList(); // refresh ตาราง
+    }
+  } catch {
+    toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้', false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'ยืนยันขาย';
+    sellCtx.submitting = false;
+  }
+};
+
+fltBase.addEventListener('change', loadList);
+fltQuote.addEventListener('change', loadList);
+</script>
+</body>
+</html>

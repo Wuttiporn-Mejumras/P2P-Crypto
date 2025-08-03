@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ฝากเข้า (Deposit)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <!-- Header -->
+  <header class="fixed top-0 left-0 right-0 h-14 bg-white/80 backdrop-blur border-b">
+    <div class="max-w-3xl mx-auto h-full flex items-center justify-between px-4">
+      <a href="/home.html" class="text-sm text-slate-600 hover:text-slate-900">← กลับหน้าหลัก</a>
+      <div class="text-right">
+        <button id="logout" class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:opacity-95">
+          ออกจากระบบ
+        </button>
+        <div class="mt-1 text-[12px] text-slate-600">
+          <span class="mr-1 text-slate-400">Address:</span>
+          <code id="addr" class="bg-slate-100 rounded px-2 py-0.5 break-all">—</code>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="pt-20 pb-16">
+    <div class="max-w-3xl mx-auto px-4">
+      <section class="bg-white rounded-2xl shadow-sm p-6 space-y-5">
+        <h1 class="text-xl font-semibold">ฝากเข้า (Deposit) / ถอน (Withdraw)</h1>
+
+        <form id="form" class="space-y-4">
+          <!-- Asset -->
+          <div>
+            <label class="block text-sm font-medium mb-1">เลือกเหรียญ (Asset)</label>
+            <select id="asset" class="w-full border rounded-xl px-3 py-2"></select>
+            <p id="assetHint" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+
+          <!-- Amount -->
+          <div>
+            <label class="block text-sm font-medium mb-1">จำนวน (Amount)</label>
+            <input id="amount" type="number" min="0" step="any"
+                   class="w-full border rounded-xl px-3 py-2" placeholder="เช่น 100.00" />
+            <p id="amtHint" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+
+          <!-- Type -->
+          <div>
+            <label class="block text-sm font-medium mb-1">ประเภท</label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="flex items-center gap-2 border rounded-xl px-3 py-2 cursor-pointer">
+                <input type="radio" name="type" value="DEPOSIT" checked />
+                ฝากเข้า (DEPOSIT)
+              </label>
+              <label class="flex items-center gap-2 border rounded-xl px-3 py-2 cursor-pointer">
+                <input type="radio" name="type" value="WITHDRAW" />
+                ถอนออก (WITHDRAW)
+              </label>
+            </div>
+          </div>
+
+          <div class="pt-2">
+            <button id="submitBtn" type="submit"
+                    class="w-full px-4 py-3 rounded-xl bg-indigo-600 text-white hover:opacity-95 transition">
+              ดำเนินการ
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 hidden">
+    <div id="toastBox" class="px-3 py-2 rounded-lg shadow bg-slate-900 text-white text-sm"></div>
+  </div>
+
+<script>
+const apiBase = "/api";
+const $ = id => document.getElementById(id);
+const toast = (m, ok=true) => {
+  const b=$('toastBox'), t=$('toast');
+  b.textContent=m;
+  b.className='px-3 py-2 rounded-lg shadow text-sm ' + (ok?'bg-emerald-600 text-white':'bg-rose-600 text-white');
+  t.classList.remove('hidden');
+  setTimeout(()=>t.classList.add('hidden'), 1800);
+};
+
+// ---------- Auth guard ----------
+const address = sessionStorage.getItem('p2p.address') || '';
+if (!address) location.replace('/');
+$('addr').textContent = address;
+
+// ---------- Asset list + precision ----------
+const ASSETS = [
+  { code:'BTC',  precision:8 },
+  { code:'USDT', precision:6 },
+  { code:'THB',  precision:2 },
+  { code:'ETH',  precision:18 },
+  { code:'XRP',  precision:6 },
+  { code:'ADA',  precision:6 },
+  { code:'DOGE', precision:8 },
+  { code:'AVAX', precision:18 },
+];
+
+const assetSel = $('asset');
+const assetHint = $('assetHint');
+const amtHint = $('amtHint');
+const amountInput = $('amount');
+
+function decimalStep(p){ return (p<=0) ? '1' : '0.' + '0'.repeat(p-1) + '1'; }
+function setupAmountFor(asset){
+  const p = asset.precision;
+  amountInput.step = decimalStep(p);
+  amountInput.placeholder = p === 0 ? 'เช่น 100' : `เช่น 100.${'0'.repeat(Math.min(p,2))}`;
+  assetHint.textContent = `ทศนิยมสูงสุด ${p} ตำแหน่ง`;
+  amtHint.textContent = `ป้อนจำนวนได้ไม่เกิน ${p} ตำแหน่งทศนิยม`;
+}
+ASSETS.forEach(a => {
+  const opt = document.createElement('option');
+  opt.value = a.code; opt.textContent = a.code;
+  assetSel.appendChild(opt);
+});
+setupAmountFor(ASSETS[0]);
+assetSel.addEventListener('change', ()=>{
+  const a = ASSETS.find(x=>x.code===assetSel.value);
+  if (a) setupAmountFor(a);
+});
+function decimalsLen(v){ const s=String(v); const i=s.indexOf('.'); return i<0?0:(s.length-i-1); }
+
+// ---------- Submit ----------
+const form = $('form'); const btn = $('submitBtn');
+form.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const assetCode = assetSel.value;
+  const amountStr = amountInput.value.trim();
+  const type = document.querySelector('input[name="type"]:checked')?.value || 'DEPOSIT';
+
+  if (!amountStr) return toast('กรอกจำนวนก่อน', false);
+  const amount = Number(amountStr);
+  if (!isFinite(amount) || amount <= 0) return toast('จำนวนไม่ถูกต้อง', false);
+
+  const a = ASSETS.find(x=>x.code===assetCode);
+  if (a && decimalsLen(amountStr) > a.precision) {
+    return toast(`ทศนิยมเกินที่กำหนด (${a.precision})`, false);
+  }
+
+  btn.disabled = true; btn.textContent = 'กำลังดำเนินการ...';
+  try{
+    const res = await fetch(`${apiBase}/wallet/topup`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ address, assetCode, amount, type })
+    });
+    const j = await res.json();
+
+    if (res.ok && !j.error) {
+      toast(type==='DEPOSIT' ? 'ฝากเงินสำเร็จ' : 'ถอนเงินสำเร็จ');
+      // ถ้าต้องการรีเซ็ตฟอร์มหลังสำเร็จ:
+      // form.reset(); setupAmountFor(ASSETS[0]);
+    } else {
+      toast(j.error || 'ทำรายการไม่สำเร็จ', false);
+    }
+  }catch(_){
+    toast('เกิดข้อผิดพลาดในการเชื่อมต่อ', false);
+  }finally{
+    btn.disabled = false; btn.textContent = 'ดำเนินการ';
+  }
+});
+
+// ---------- Logout ----------
+$('logout').onclick = () => {
+  sessionStorage.removeItem('p2p.address');
+  sessionStorage.removeItem('p2p.key');
+  sessionStorage.removeItem('p2p.keyAck');
+  sessionStorage.removeItem('p2p.source');
+  location.replace('/index.html');
+};
+</script>
+</body>
+</html>

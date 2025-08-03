@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Home</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <!-- Header: ซ้าย = Wallet / ขวา = Logout + Address -->
+  <header class="fixed top-0 left-0 right-0 h-14 bg-white/80 backdrop-blur border-b">
+    <div class="max-w-5xl mx-auto h-full flex items-center justify-between px-4">
+      <!-- ซ้าย: ปุ่มกระเป๋า -->
+      <div class="flex items-center gap-2">
+        <button id="menu-wallet" class="px-3 py-1.5 rounded-lg border hover:bg-slate-50 text-sm">
+          กระเป๋า (Wallet)
+        </button>
+      </div>
+      <!-- ขวา: ออกจากระบบ + Address -->
+      <div class="text-right">
+        <button id="logout" class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:opacity-95">
+          ออกจากระบบ
+        </button>
+        <div class="mt-1 text-[12px] text-slate-600">
+          <span class="mr-1 text-slate-400">Address:</span>
+          <code id="addr" class="bg-slate-100 rounded px-2 py-0.5 break-all">—</code>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="pt-20 pb-12">
+    <div class="max-w-5xl mx-auto px-4 space-y-6">
+      <!-- เมนูหลัก -->
+      <section class="bg-white rounded-2xl shadow-sm p-5">
+        <h2 class="text-lg font-semibold mb-3">เมนูหลัก</h2>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <button class="px-3 py-3 rounded-xl border hover:bg-slate-50" id="menu-ask-sell">ตั้งขาย</button>
+          <button class="px-3 py-3 rounded-xl border hover:bg-slate-50" id="menu-ask-buy">ตั้งซื้อ</button>
+          <button class="px-3 py-3 rounded-xl border hover:bg-slate-50" id="menu-market-sell">ขายทันที</button>
+          <button class="px-3 py-3 rounded-xl border hover:bg-slate-50" id="menu-market-buy">ซื้อทันที</button>
+          <button class="px-3 py-3 rounded-xl border hover:bg-slate-50" id="menu-deposit">ฝากเข้า (Deposit)</button>
+        </div>
+      </section>
+
+      <!-- กล่อง Private Key (เฉพาะมาจาก Create) -->
+      <section id="keySection" class="hidden bg-white rounded-2xl shadow-sm p-5 relative">
+        <button id="hideKeyBox"
+                class="absolute right-3 top-3 text-slate-500 hover:text-slate-700"
+                aria-label="ซ่อนส่วนนี้">✕</button>
+
+        <h3 class="text-base font-semibold mb-2">ข้อมูลสำคัญของคุณ</h3>
+        <div class="space-y-3">
+          <div>
+            <div class="text-xs text-slate-500">Private Key (Base64 PKCS#8)</div>
+            <code id="key" class="block text-sm bg-slate-100 rounded-md px-2 py-1 break-all">—</code>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button id="copyAddr" class="px-3 py-2 rounded-xl border">คัดลอก Address</button>
+            <button id="copyKey"  class="px-3 py-2 rounded-xl border">คัดลอก Key</button>
+            <button id="ack" class="px-3 py-2 rounded-xl bg-emerald-600 text-white">ฉันบันทึกคีย์แล้ว</button>
+          </div>
+          <p class="text-[12px] text-rose-600">** ก่อนปิดแท็บ กรุณาบันทึกคีย์ของคุณ **</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Modal: ยืนยันซ่อนคีย์ (ปิดแล้วหายถาวร) -->
+  <dialog id="confirmHide" class="rounded-2xl p-0 w-[92%] max-w-md">
+    <form class="bg-white rounded-2xl p-5 space-y-3" onsubmit="event.preventDefault()">
+      <h4 class="font-semibold text-lg text-center">ยืนยันการซ่อน Private Key</h4>
+      <p class="text-sm text-slate-700 text-center">
+        แน่ใจแล้วใช่ไหมว่า <b>คัดลอก/บันทึก Private Key</b> เรียบร้อย?
+      </p>
+      <div class="grid grid-cols-2 gap-2 pt-2">
+        <button type="button" class="px-4 py-2 rounded-xl border"
+                onclick="document.getElementById('confirmHide').close()">ยกเลิก</button>
+        <button id="confirmHideOk" type="button" class="px-4 py-2 rounded-xl bg-slate-900 text-white">ซ่อนถาวร</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: กระเป๋า (Wallet balances) -->
+  <dialog id="walletModal" class="rounded-2xl p-0 w-[92%] max-w-2xl">
+    <form class="bg-white rounded-2xl p-5 space-y-4" onsubmit="event.preventDefault()">
+      <div class="flex items-center justify-between">
+        <h4 class="font-semibold text-lg">ยอดคงเหลือกระเป๋า</h4>
+        <button type="button" class="text-slate-500 hover:text-slate-700"
+                onclick="document.getElementById('walletModal').close()">✕</button>
+      </div>
+      <div class="overflow-auto">
+        <table class="w-full text-sm">
+          <thead class="text-left text-slate-500">
+            <tr>
+              <th class="py-2 pr-3">Asset</th>
+              <th class="py-2 pr-3">Available</th>
+              <th class="py-2 pr-3">Locked</th>
+              <th class="py-2">Total</th>
+            </tr>
+          </thead>
+          <tbody id="walletRows"></tbody>
+        </table>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 hidden">
+    <div id="toastBox" class="px-3 py-2 rounded-lg shadow bg-slate-900 text-white text-sm"></div>
+  </div>
+
+<script>
+const apiBase = "/api";
+const $ = id => document.getElementById(id);
+const toast = (m, ok=true) => {
+  const b=$('toastBox'), t=$('toast');
+  b.textContent=m; b.className='px-3 py-2 rounded-lg shadow text-sm ' + (ok?'bg-emerald-600':'bg-rose-600');
+  t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),1600);
+};
+
+// ---------- ดึง state ----------
+const address   = sessionStorage.getItem('p2p.address') || '';
+const keyBase64 = sessionStorage.getItem('p2p.key');      // มีเฉพาะเมื่อมาจาก Create
+const source    = sessionStorage.getItem('p2p.source');   // 'create' | 'login'
+const keyAck    = sessionStorage.getItem('p2p.keyAck') === 'true';
+
+if (!address) location.replace('/'); // กันเข้าตรง
+$('addr').textContent = address;
+
+// ---------- เตือนก่อนปิดแท็บ จนกว่าจะยืนยัน/ซ่อนคีย์ ----------
+const beforeUnloadHandler = (e) => {
+  if (sessionStorage.getItem('p2p.source') === 'create' &&
+      sessionStorage.getItem('p2p.key') &&
+      sessionStorage.getItem('p2p.keyAck') !== 'true') {
+    e.preventDefault(); e.returnValue = ''; return '';
+  }
+};
+
+// ---------- หากมาจาก Create: แสดงคีย์ ----------
+if (source === 'create' && keyBase64) {
+  $('keySection').classList.remove('hidden');
+  $('key').textContent = keyBase64;
+  if (!keyAck) window.addEventListener('beforeunload', beforeUnloadHandler);
+
+  $('copyAddr').onclick = () => navigator.clipboard.writeText(address).then(()=>toast('คัดลอก Address แล้ว'));
+  $('copyKey').onclick  = () => navigator.clipboard.writeText(keyBase64).then(()=>toast('คัดลอก Key แล้ว'));
+
+  // กด “ฉันบันทึกคีย์แล้ว” -> หยุดเตือน แต่ยังแสดงกล่องต่อได้
+  $('ack').onclick = () => {
+    sessionStorage.setItem('p2p.keyAck', 'true');
+    window.removeEventListener('beforeunload', beforeUnloadHandler);
+    toast('รับทราบแล้ว ✅');
+  };
+
+  // กดปุ่มปิด (✕) -> ยืนยัน -> ซ่อนถาวร + ลบคีย์ + หยุดเตือน
+  $('hideKeyBox').onclick = () => { $('confirmHide').showModal(); };
+  $('confirmHideOk').onclick = () => {
+    $('confirmHide').close();
+    $('keySection').classList.add('hidden');
+    sessionStorage.removeItem('p2p.key');
+    sessionStorage.setItem('p2p.keyAck', 'true');
+    window.removeEventListener('beforeunload', beforeUnloadHandler);
+    toast('ซ่อน Private Key แล้ว');
+  };
+}
+
+// ---------- Wallet modal ----------
+function fmt(n) {
+  if (n === null || n === undefined) return "0";
+  const s = String(n);
+  return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
+}
+async function openWalletModal() {
+  try {
+    const res = await fetch(`${apiBase}/wallet/${encodeURIComponent(address)}/balance`);
+    const j = await res.json();
+    if (!res.ok || j.error) {
+      toast(j.error || "ดึงยอดคงเหลือไม่สำเร็จ", false);
+      return;
+    }
+    const rows = j.balances || [];
+    const tbody = document.getElementById("walletRows");
+    tbody.innerHTML = rows.length
+      ? rows.map(b => {
+          const avail = b.balanceAvailable ?? b.available ?? "0";
+          const locked = b.balanceLocked ?? b.locked ?? "0";
+          const total = (Number(avail) + Number(locked)).toString();
+          return `
+            <tr class="border-t">
+              <td class="py-2 pr-3 font-medium">${b.assetCode}</td>
+              <td class="py-2 pr-3">${fmt(avail)}</td>
+              <td class="py-2 pr-3">${fmt(locked)}</td>
+              <td class="py-2">${fmt(total)}</td>
+            </tr>`;
+        }).join("")
+      : `<tr class="border-t"><td colspan="4" class="py-3 text-slate-500 text-center">ไม่พบยอดคงเหลือ</td></tr>`;
+    document.getElementById("walletModal").showModal();
+  } catch {
+    toast("เกิดข้อผิดพลาดในการเชื่อมต่อ", false);
+  }
+}
+
+// ---------- ออกจากระบบ -> กลับหน้า index (no back) ----------
+function goIndex() {
+  sessionStorage.removeItem('p2p.address');
+  sessionStorage.removeItem('p2p.key');
+  sessionStorage.removeItem('p2p.keyAck');
+  sessionStorage.removeItem('p2p.source');
+  if (location.pathname.endsWith('/home.html')) {
+    location.replace('/index.html');
+  } else {
+    location.replace('/');
+  }
+}
+$('logout').onclick = goIndex;
+
+// ---------- สายเมนู ----------
+document.getElementById('menu-ask-sell').onclick = () => {
+  location.href = '/sell.html';
+};
+document.getElementById('menu-ask-buy').onclick = () => {
+  location.href = '/buy.html';
+};
+document.getElementById('menu-market-sell').onclick = () => {
+  location.href = '/sellMarket.html';
+};
+document.getElementById('menu-market-buy').onclick = () => {
+  location.href = '/buyMarket.html';
+};
+document.getElementById('menu-deposit').onclick = () => { 
+    location.href = '/deposit.html'; 
+};
+document.getElementById('menu-wallet').onclick  = openWalletModal; // ปุ่มซ้ายบน
+</script>
+</body>
+</html>

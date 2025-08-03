@@ -1,0 +1,25 @@
+{
+  "name": "p2p-crypto",
+  "version": "1.0.0",
+  "main": "app.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "nodemon app.js",
+    "start": "node app.js",
+    "db:init": "sqlite3 ./data/app.sqlite3 < db/schema.sql",
+    "db:seed": "sqlite3 ./data/app.sqlite3 < seed/seed.sql"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "knex": "^3.1.0",
+    "objection": "^3.1.5",
+    "sequelize": "^6.37.7",
+    "sql.js": "^1.13.0",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
