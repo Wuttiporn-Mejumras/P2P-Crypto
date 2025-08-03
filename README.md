@@ -1,4 +1,3 @@
-@@ -0,0 +1,32 @@
 # P2P-Crypto
 
 โปรเจกต์ระบบซื้อขายคริปโตแบบ P2P (Fiat & Crypto) พัฒนาด้วย Node.js + Express + SQLite
@@ -22,7 +21,7 @@
    การใช้งาน
 
 2. การใช้งาน
-
+```bash
 - Create Wallet
 - บันทึก Address , Private Key ของตัวเอง (ใช้ Address, Private Key ในการ login ครั้งต่อไป)
 - Deposit สกุลเงินที่ต้องการได้ทั้ง fiat, crypto
